@@ -1,6 +1,6 @@
 const express = require("express");
 const chalk = require("chalk");
-const con = require("./src/db/db");
+const con = require("./db/db");
 
 const app = express();
 // app.use(express.json());
@@ -8,7 +8,7 @@ app.use(express.json({ limit: "10mb" })); // or higher if needed
 
 // --- Webhook state ---
 const webhookState = {
-  reply: true,
+  reply: false,
   interested: true,
 };
 
@@ -51,10 +51,10 @@ function checkWebhook(type) {
 }
 
 // --- Webhook routes ---
-app.post("/webhooks/reply", checkWebhook("reply"), async (req, res) => {
-  res.sendStatus(200);
-  await logWebhook("reply_received", req.body);
-});
+// app.post("/webhooks/reply", checkWebhook("reply"), async (req, res) => {
+//   res.sendStatus(200);
+//   await logWebhook("reply_received", req.body);
+// });
 
 app.post(
   "/webhooks/interested",
@@ -66,18 +66,18 @@ app.post(
 );
 
 // --- Toggle routes ---
-app.post("/toggle/reply/:state", (req, res) => {
-  const { state } = req.params;
-  webhookState.reply = state === "on";
-  console.log(
-    webhookState.reply
-      ? chalk.green("Reply webhook ENABLED")
-      : chalk.red("Reply webhook DISABLED")
-  );
-  res.json({
-    message: `Reply webhook ${webhookState.reply ? "enabled" : "disabled"}`,
-  });
-});
+// app.post("/toggle/reply/:state", (req, res) => {
+//   const { state } = req.params;
+//   webhookState.reply = state === "on";
+//   console.log(
+//     webhookState.reply
+//       ? chalk.green("Reply webhook ENABLED")
+//       : chalk.red("Reply webhook DISABLED")
+//   );
+//   res.json({
+//     message: `Reply webhook ${webhookState.reply ? "enabled" : "disabled"}`,
+//   });
+// });
 
 app.post("/toggle/interested/:state", (req, res) => {
   const { state } = req.params;
@@ -95,18 +95,18 @@ app.post("/toggle/interested/:state", (req, res) => {
 });
 
 // --- Combined toggle for all ---
-app.post("/toggle/all/:state", (req, res) => {
-  const { state } = req.params;
-  const enabled = state === "on";
-  webhookState.reply = enabled;
-  webhookState.interested = enabled;
-  console.log(
-    enabled
-      ? chalk.green("All webhooks ENABLED")
-      : chalk.red("All webhooks DISABLED")
-  );
-  res.json({ message: `All webhooks ${enabled ? "enabled" : "disabled"}` });
-});
+// app.post("/toggle/all/:state", (req, res) => {
+//   const { state } = req.params;
+//   const enabled = state === "on";
+//   webhookState.reply = enabled;
+//   webhookState.interested = enabled;
+//   console.log(
+//     enabled
+//       ? chalk.green("All webhooks ENABLED")
+//       : chalk.red("All webhooks DISABLED")
+//   );
+//   res.json({ message: `All webhooks ${enabled ? "enabled" : "disabled"}` });
+// });
 
 // --- Status route ---
 app.get("/status", (req, res) => {
@@ -118,33 +118,37 @@ app.get("/status", (req, res) => {
 
 async function addEmailToDatabase({ email, campaign_id }) {
   try {
-    console.log(`Email : ${email}, Campaign ID: ${campaign_id}`);
+    console.log(`Email: ${email}, Campaign ID: ${campaign_id}`);
 
     if (!email || !campaign_id) {
-      console.log("Campaign ID and Email is required");
+      console.log("Campaign ID and Email are required");
       return;
     }
 
     const query = `
-    INSERT INTO tobe_processed_campaign_emails (
+      INSERT INTO tobe_processed_campaign_emails (
         campaign_id, email, created_at, updated_at
-    ) VALUES (
-        $1, $2, NOW(), NOW()
-    )
-    RETURNING id;
+      )
+      VALUES ($1, $2, NOW(), NOW())
+      ON CONFLICT (campaign_id, email) DO NOTHING
+      RETURNING id;
     `;
 
     const values = [campaign_id, email];
-
     const result = await con.query(query, values);
-    const insertedId = result.rows[0]?.id;
 
-    console.log("CampaignId and Email is Appended");
-    return insertedId;
+    if (result.rows.length > 0) {
+      console.log("✅ CampaignId and Email appended");
+      return result.rows[0].id;
+    } else {
+      console.log("⚠️ Combination already exists, skipping insert");
+      return null;
+    }
   } catch (error) {
-    console.log(error);
+    console.error("❌ Error inserting email:", error);
   }
 }
+
 
 // --- Server setup ---
 const PORT = process.env.PORT || 3000;
